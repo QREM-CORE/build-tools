@@ -9,7 +9,7 @@ This toolchain automatically resolves transitive dependencies in hierarchical `.
 In your target hardware repository, add this tools repository as a submodule:
 
 ```bash
-git submodule add <URL_TO_BUILD_TOOLS_REPO> build-tools
+git submodule add https://github.com/QREM-CORE/build-tools.git build-tools
 git submodule update --init --recursive
 ```
 
