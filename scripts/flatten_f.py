@@ -1,7 +1,11 @@
 import sys
 import os
 
-def parse_filelist(file_path):
+def parse_filelist(file_path, seen_filenames=None):
+    # Initialize the set on the first recursive call
+    if seen_filenames is None:
+        seen_filenames = set()
+
     # Ensure the .f file exists
     if not os.path.exists(file_path):
         print(f"Error: Could not find filelist '{file_path}'", file=sys.stderr)
@@ -20,19 +24,22 @@ def parse_filelist(file_path):
 
             # If the line is an include (e.g., "-f lib/keccak/rtl.f")
             if line.startswith('-f ') or line.startswith('-F '):
-                # Extract the filename after the flag
                 included_f = line.split(maxsplit=1)[1]
-                # Resolve its path relative to the current .f file
                 included_path = os.path.join(base_dir, included_f)
-                # Recursively parse the included file
-                parse_filelist(included_path)
+
+                # Recursively parse, passing our set of seen files
+                parse_filelist(included_path, seen_filenames)
 
             # Otherwise, it's a standard RTL file
             else:
-                # Resolve the RTL file's absolute path
-                sv_path = os.path.join(base_dir, line)
-                # Print the cleaned-up absolute path
-                print(os.path.normpath(sv_path))
+                sv_path = os.path.normpath(os.path.join(base_dir, line))
+                filename = os.path.basename(sv_path)
+
+                # Deduplicate based on the file name (e.g., 'axis_if.sv')
+                # This perfectly solves the nested git submodule diamond dependency!
+                if filename not in seen_filenames:
+                    seen_filenames.add(filename)
+                    print(sv_path)
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
