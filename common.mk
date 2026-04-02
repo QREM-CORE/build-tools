@@ -49,5 +49,8 @@ else
 	@rm -f run_$*.macro
 endif
 
+# Allow for custom cleanup in separate repos
+EXTRA_CLEAN ?=
+
 clean:
-	rm -rf work *.vcd transcript vsim.wlf run_*.macro *.log obj_dir build.f
+	rm -rf work *.vcd transcript vsim.wlf run_*.macro *.log obj_dir build.f $(EXTRA_CLEAN)
