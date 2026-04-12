@@ -19,7 +19,7 @@ def generate_yosys_script():
     # --- METRIC 1: FPGA (LUT6) & TIMING (LTP) ---
     synth -top {TOP_MODULE}
     abc -lut 6
-    stat -file fpga_stat.txt
+    stat > fpga_stat.txt
     opt
     ltp > ltp_stat.txt
 
@@ -27,7 +27,7 @@ def generate_yosys_script():
     design -load pre_synth
     synth -top {TOP_MODULE}
     abc -g cmos2
-    stat -file asic_stat.txt
+    stat > asic_stat.txt
     """
     with open("metrics.ys", "w") as f:
         f.write(script)
