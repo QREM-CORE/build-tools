@@ -36,7 +36,7 @@ def run_yosys():
     """Executes the generated Yosys script."""
     print("🚀 Running Yosys Synthesis Metrics (This may take a minute)...")
     try:
-        subprocess.run(["yosys", "-q", "metrics.ys"], check=True)
+        subprocess.run(["yosys", "-m", "slang", "-q", "metrics.ys"], check=True)
     except subprocess.CalledProcessError:
         print("❌ Yosys synthesis failed! Check your RTL for syntax errors.")
         sys.exit(1)
