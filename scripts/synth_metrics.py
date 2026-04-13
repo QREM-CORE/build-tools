@@ -89,13 +89,13 @@ def run_yosys():
         print("::endgroup::")
         sys.exit(1)
 
-def extract_and_save_metrics(log, target):
+def extract_and_save_metrics(log, target, top_module):
     """Parses the target-specific log and saves the data as a JSON artifact."""
     metrics = {}
 
     if target == "fpga":
         # Extract FPGA LUTs
-        match_lut = re.search(r'\$lut\s+(\d+)', log)
+        match_lut = re.search(r'(\d+)\s+\$lut', log)
         metrics["fpga_luts"] = match_lut.group(1) if match_lut else "N/A"
 
         # Extract Longest Topological Path
@@ -113,9 +113,10 @@ def extract_and_save_metrics(log, target):
 
         total_ge = 0.0
 
-        # Isolate the final stat block to prevent double-counting
-        if "=== hash_sampler_unit ===" in log:
-            last_stat_block = log.split("=== hash_sampler_unit ===")[-1]
+        # Isolate the final stat block
+        header = f"=== {top_module} ==="
+        if header in log:
+            last_stat_block = log.split(header)[-1]
             matches = re.findall(r'\s+(\d+)\s+(\$_\w+_)', last_stat_block)
 
             for count_str, cell_type in matches:
@@ -189,7 +190,7 @@ if __name__ == "__main__":
         print(f"--- Starting Phase: Synthesis ({args.run.upper()}) ---")
         generate_yosys_script(args.run, args.top)
         raw_log = run_yosys()
-        extract_and_save_metrics(raw_log, args.run)
+        extract_and_save_metrics(raw_log, args.run, args.top)
 
     elif args.report:
         print("--- Starting Phase: Report Generation ---")
