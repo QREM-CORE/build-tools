@@ -31,25 +31,43 @@ def generate_yosys_script():
         f.write(script)
 
 def run_and_extract_metrics():
-    """Runs Yosys with color disabled (-T) and merges stderr into stdout."""
-    print("🚀 Running Yosys Synthesis Metrics (This may take a minute)...")
+    """Runs Yosys"""
+
+    # Echo the generated Yosys script contents so it's visible in the logs
+    try:
+        with open("metrics.ys", "r") as f:
+            script_contents = f.read()
+        print("::group::📜 View Generated Yosys Script (metrics.ys)")
+        print(script_contents.strip())
+        print("::endgroup::\n")
+    except FileNotFoundError:
+        print("⚠️ Warning: Could not read metrics.ys before execution.")
+
+    cmd = ["yosys", "-T", "-m", "slang", "metrics.ys"]
+
+    print(f"🚀 Executing Command: {' '.join(cmd)}")
+    print("⏳ Running Yosys Synthesis Metrics (This may take a minute)...\n")
 
     try:
-        # -T disables ANSI escape sequences so regex works perfectly
-        # stderr=subprocess.STDOUT merges error streams into the log
         result = subprocess.run(
-            ["yosys", "-T", "-m", "slang", "metrics.ys"],
+            cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             check=True
         )
         log = result.stdout
+
+        # Wrap the massive log in a GitHub Actions foldable group
+        print("::group::🔍 Click here to expand the raw Yosys Synthesis Log")
         print(log)
+        print("::endgroup::\n")
 
     except subprocess.CalledProcessError as e:
         print("❌ Yosys synthesis failed! Check your RTL for syntax errors.")
+        print("::group::💥 Click here to view the Failing Yosys Log")
         print(e.stdout)
+        print("::endgroup::")
         sys.exit(1)
 
     metrics = {"fpga_luts": "N/A", "asic_ge": "N/A", "ltp": "N/A"}
