@@ -3,22 +3,20 @@ import subprocess
 import re
 import sys
 
-# Define the top module
 TOP_MODULE = "hash_sampler_unit"
 
 def generate_yosys_script():
-    """Generates the Yosys command file. No temporary text files needed."""
+    """Generates the Yosys command file targeting explicit LUT retention."""
     script = f"""
     # 1. Read and Elaborate
     read_slang -f build.f
     hierarchy -check -top {TOP_MODULE}
 
-    # Save the elaborated state so we don't have to re-parse Slang for every metric
     design -save pre_synth
 
     # --- METRIC 1: FPGA (LUT6) & TIMING (LTP) ---
-    synth -top {TOP_MODULE}
-    abc -lut 6
+    # Using 'synth -lut 6' instead of 'abc' forces Yosys to keep the $lut primitives
+    synth -lut 6 -top {TOP_MODULE}
     stat
     opt
     ltp
@@ -33,29 +31,27 @@ def generate_yosys_script():
         f.write(script)
 
 def run_and_extract_metrics():
-    """Runs Yosys, captures stdout, and parses the metrics directly."""
+    """Runs Yosys with color disabled (-T) and merges stderr into stdout."""
     print("🚀 Running Yosys Synthesis Metrics (This may take a minute)...")
 
     try:
-        # Run Yosys, capture all output into memory (stdout)
+        # -T disables ANSI escape sequences so regex works perfectly
+        # stderr=subprocess.STDOUT merges error streams into the log
         result = subprocess.run(
-            ["yosys", "-m", "slang", "metrics.ys"],
-            capture_output=True,
+            ["yosys", "-T", "-m", "slang", "metrics.ys"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
             check=True
         )
         log = result.stdout
-
-        # Print the log so it still shows up in the GitHub Actions UI
         print(log)
 
     except subprocess.CalledProcessError as e:
         print("❌ Yosys synthesis failed! Check your RTL for syntax errors.")
         print(e.stdout)
-        print(e.stderr)
         sys.exit(1)
 
-    # Initialize defaults
     metrics = {"fpga_luts": "N/A", "asic_ge": "N/A", "ltp": "N/A"}
 
     # 1. Extract FPGA LUTs (e.g., "$lut     9250")
@@ -64,12 +60,12 @@ def run_and_extract_metrics():
         metrics["fpga_luts"] = match_lut.group(1)
 
     # 2. Extract ASIC Gate Area (e.g., "Chip area for module '\hash_sampler_unit': 81597.528")
-    match_asic = re.search(r'Chip area for module.*?:\s+([\d\.]+)', log)
+    match_asic = re.search(r'Chip area for module[^\n]*?:\s+([\d\.]+)', log)
     if match_asic:
         metrics["asic_ge"] = match_asic.group(1)
 
-    # 3. Extract Longest Topological Path (e.g., "(length=40):")
-    match_ltp = re.search(r'Longest topological path.*?\(length=(\d+)\)', log)
+    # 3. Extract Longest Topological Path
+    match_ltp = re.search(r'Longest topological path[^\n]*?\(length=(\d+)\)', log)
     if match_ltp:
         metrics["ltp"] = match_ltp.group(1)
 
