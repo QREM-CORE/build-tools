@@ -3,11 +3,11 @@ import subprocess
 import re
 import sys
 
-# Define the top module (could be parameterized via argparse later)
+# Define the top module
 TOP_MODULE = "hash_sampler_unit"
 
 def generate_yosys_script():
-    """Generates the Yosys command file to extract all 3 metrics."""
+    """Generates the Yosys command file. No temporary text files needed."""
     script = f"""
     # 1. Read and Elaborate
     read_slang -f build.f
@@ -19,55 +19,59 @@ def generate_yosys_script():
     # --- METRIC 1: FPGA (LUT6) & TIMING (LTP) ---
     synth -top {TOP_MODULE}
     abc -lut 6
-    stat > fpga_stat.txt
+    stat
     opt
-    ltp > ltp_stat.txt
+    ltp
 
     # --- METRIC 2: ASIC (Gate Equivalents) ---
     design -load pre_synth
     synth -top {TOP_MODULE}
     abc -g cmos2
-    stat > asic_stat.txt
+    stat
     """
     with open("metrics.ys", "w") as f:
         f.write(script)
 
-def run_yosys():
-    """Executes the generated Yosys script."""
+def run_and_extract_metrics():
+    """Runs Yosys, captures stdout, and parses the metrics directly."""
     print("🚀 Running Yosys Synthesis Metrics (This may take a minute)...")
+
     try:
-        subprocess.run(["yosys", "-m", "slang", "-q", "metrics.ys"], check=True)
-    except subprocess.CalledProcessError:
+        # Run Yosys, capture all output into memory (stdout)
+        result = subprocess.run(
+            ["yosys", "-m", "slang", "metrics.ys"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        log = result.stdout
+
+        # Print the log so it still shows up in the GitHub Actions UI
+        print(log)
+
+    except subprocess.CalledProcessError as e:
         print("❌ Yosys synthesis failed! Check your RTL for syntax errors.")
+        print(e.stdout)
+        print(e.stderr)
         sys.exit(1)
 
-def extract_metrics():
-    """Parses the generated text files to extract numbers."""
+    # Initialize defaults
     metrics = {"fpga_luts": "N/A", "asic_ge": "N/A", "ltp": "N/A"}
 
-    # 1. Extract FPGA LUTs
-    try:
-        with open("fpga_stat.txt", "r") as f:
-            log = f.read()
-            match = re.search(r'\$lut\s+(\d+)', log)
-            if match: metrics["fpga_luts"] = match.group(1)
-    except FileNotFoundError: pass
+    # 1. Extract FPGA LUTs (e.g., "$lut     9250")
+    match_lut = re.search(r'\$lut\s+(\d+)', log)
+    if match_lut:
+        metrics["fpga_luts"] = match_lut.group(1)
 
-    # 2. Extract ASIC Gate Area
-    try:
-        with open("asic_stat.txt", "r") as f:
-            log = f.read()
-            match = re.search(r'Chip area for module.*?:\s+([\d\.]+)', log)
-            if match: metrics["asic_ge"] = match.group(1)
-    except FileNotFoundError: pass
+    # 2. Extract ASIC Gate Area (e.g., "Chip area for module '\hash_sampler_unit': 81597.528")
+    match_asic = re.search(r'Chip area for module.*?:\s+([\d\.]+)', log)
+    if match_asic:
+        metrics["asic_ge"] = match_asic.group(1)
 
-    # 3. Extract Longest Topological Path (Critical Path)
-    try:
-        with open("ltp_stat.txt", "r") as f:
-            log = f.read()
-            match = re.search(r'Longest topological path.*?:\s+(\d+)\s+cells', log)
-            if match: metrics["ltp"] = match.group(1)
-    except FileNotFoundError: pass
+    # 3. Extract Longest Topological Path (e.g., "(length=40):")
+    match_ltp = re.search(r'Longest topological path.*?\(length=(\d+)\)', log)
+    if match_ltp:
+        metrics["ltp"] = match_ltp.group(1)
 
     return metrics
 
@@ -86,10 +90,10 @@ def generate_markdown(metrics):
 """
     with open("pr_comment.md", "w") as f:
         f.write(md)
-    print("✅ Metrics successfully extracted and saved to pr_comment.md")
+    print("\n✅ Metrics successfully extracted and saved to pr_comment.md:")
+    print(f"   LUTs: {metrics['fpga_luts']} | GEs: {metrics['asic_ge']} | Path: {metrics['ltp']}")
 
 if __name__ == "__main__":
     generate_yosys_script()
-    run_yosys()
-    metrics_data = extract_metrics()
+    metrics_data = run_and_extract_metrics()
     generate_markdown(metrics_data)
