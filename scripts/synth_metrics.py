@@ -38,7 +38,7 @@ def generate_yosys_script(target, top_module):
     # --- METRIC 1: FPGA (LUT6) & TIMING (LTP) ---
     synth -lut 6 -top {top_module}
     stat
-    opt
+    opt -full
     ltp
     """
     elif target == "asic":
