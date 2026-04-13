@@ -103,9 +103,28 @@ def extract_and_save_metrics(log, target):
         metrics["ltp"] = match_ltp.group(1) if match_ltp else "N/A"
 
     elif target == "asic":
-        # Extract ASIC Gate Area
-        match_asic = re.search(r'Chip area for module[^\n]*?:\s+([\d\.]+)', log)
-        metrics["asic_ge"] = match_asic.group(1) if match_asic else "N/A"
+        ge_weights = {
+            '$_NAND_': 1.0, '$_NOR_': 1.0, '$_NOT_': 0.5,
+            '$_AND_': 1.5, '$_OR_': 1.5, '$_ANDNOT_': 1.5, '$_ORNOT_': 1.5,
+            '$_XOR_': 2.5, '$_XNOR_': 2.5, '$_MUX_': 2.5,
+            '$_DFF_PP0_': 5.0, '$_DFF_PP1_': 5.0,
+            '$_DFFE_PP_': 6.0, '$_DFFE_PP0P_': 6.0, '$_SDFFCE_PN0P_': 7.0
+        }
+
+        total_ge = 0.0
+
+        # Isolate the final stat block to prevent double-counting
+        if "=== hash_sampler_unit ===" in log:
+            last_stat_block = log.split("=== hash_sampler_unit ===")[-1]
+            matches = re.findall(r'\s+(\d+)\s+(\$_\w+_)', last_stat_block)
+
+            for count_str, cell_type in matches:
+                count = int(count_str)
+                weight = ge_weights.get(cell_type, 2.0)
+                total_ge += count * weight
+
+            if total_ge > 0:
+                metrics["asic_ge"] = f"{total_ge:,.1f}"
 
     output_file = f"metrics-{target}.json"
     with open(output_file, "w") as f:
