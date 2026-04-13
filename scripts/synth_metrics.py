@@ -39,7 +39,8 @@ def generate_yosys_script(target, top_module):
     synth -lut 6 -top {top_module}
     stat
     opt -full
-    ltp
+    flatten
+    ltp -noff
     """
     elif target == "asic":
         script += f"""
