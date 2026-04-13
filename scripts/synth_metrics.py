@@ -1,52 +1,71 @@
+"""
+=============================================================================
+File        : synth_metrics.py
+Author(s)   : Kiet Le
+Description : A modular metrics engine for Yosys and Slang. Orchestrates a
+              "Scatter-Gather" CI architecture by performing target-specific
+              synthesis, extracting hardware metrics (LUTs, GEs, Path Depth),
+              and generating unified Markdown reports for GitHub PRs.
+
+Usage:
+  1. Synthesis Phase (Scatter):
+     python3 synth_metrics.py --top <module> --run [fpga|asic]
+     (Generates metrics-<target>.json)
+
+  2. Reporting Phase (Gather):
+     python3 synth_metrics.py --top <module> --report
+     (Consumes JSON artifacts to generate pr_comment.md)
+=============================================================================
+"""
 #!/usr/bin/env python3
+import argparse
 import subprocess
 import re
+import json
 import sys
+import os
 
-TOP_MODULE = "hash_sampler_unit"
-
-def generate_yosys_script():
-    """Generates the Yosys command file targeting explicit LUT retention."""
+def generate_yosys_script(target, top_module):
+    """Generates a target-specific Yosys command file."""
     script = f"""
     # 1. Read and Elaborate
     read_slang -f build.f
-    hierarchy -check -top {TOP_MODULE}
+    hierarchy -check -top {top_module}
+    """
 
-    design -save pre_synth
-
+    if target == "fpga":
+        script += f"""
     # --- METRIC 1: FPGA (LUT6) & TIMING (LTP) ---
-    # Using 'synth -lut 6' instead of 'abc' forces Yosys to keep the $lut primitives
-    synth -lut 6 -top {TOP_MODULE}
+    synth -lut 6 -top {top_module}
     stat
     opt
     ltp
-
+    """
+    elif target == "asic":
+        script += f"""
     # --- METRIC 2: ASIC (Gate Equivalents) ---
-    design -load pre_synth
-    synth -top {TOP_MODULE}
+    synth -top {top_module}
     abc -g cmos2
     stat
     """
+
     with open("metrics.ys", "w") as f:
         f.write(script)
 
-def run_and_extract_metrics():
-    """Runs Yosys"""
-
-    # Echo the generated Yosys script contents so it's visible in the logs
+def run_yosys():
+    """Runs Yosys, prints the script and command, and groups the log output."""
     try:
         with open("metrics.ys", "r") as f:
             script_contents = f.read()
-        print("::group::📜 View Generated Yosys Script (metrics.ys)")
+        print("::group::View Generated Yosys Script (metrics.ys)")
         print(script_contents.strip())
         print("::endgroup::\n")
     except FileNotFoundError:
-        print("⚠️ Warning: Could not read metrics.ys before execution.")
+        print("Warning: Could not read metrics.ys before execution.")
 
     cmd = ["yosys", "-T", "-m", "slang", "metrics.ys"]
-
-    print(f"🚀 Executing Command: {' '.join(cmd)}")
-    print("⏳ Running Yosys Synthesis Metrics (This may take a minute)...\n")
+    print(f"Executing Command: {' '.join(cmd)}")
+    print("Running Yosys Synthesis Metrics (This may take a minute)...\n")
 
     try:
         result = subprocess.run(
@@ -58,41 +77,69 @@ def run_and_extract_metrics():
         )
         log = result.stdout
 
-        # Wrap the massive log in a GitHub Actions foldable group
-        print("::group::🔍 Click here to expand the raw Yosys Synthesis Log")
+        print("::group::Click here to expand the raw Yosys Synthesis Log")
         print(log)
         print("::endgroup::\n")
+        return log
 
     except subprocess.CalledProcessError as e:
-        print("❌ Yosys synthesis failed! Check your RTL for syntax errors.")
-        print("::group::💥 Click here to view the Failing Yosys Log")
+        print("Error: Yosys synthesis failed! Check your RTL for syntax errors.")
+        print("::group::Click here to view the Failing Yosys Log")
         print(e.stdout)
         print("::endgroup::")
         sys.exit(1)
 
-    metrics = {"fpga_luts": "N/A", "asic_ge": "N/A", "ltp": "N/A"}
+def extract_and_save_metrics(log, target):
+    """Parses the target-specific log and saves the data as a JSON artifact."""
+    metrics = {}
 
-    # 1. Extract FPGA LUTs (e.g., "$lut     9250")
-    match_lut = re.search(r'\$lut\s+(\d+)', log)
-    if match_lut:
-        metrics["fpga_luts"] = match_lut.group(1)
+    if target == "fpga":
+        # Extract FPGA LUTs
+        match_lut = re.search(r'\$lut\s+(\d+)', log)
+        metrics["fpga_luts"] = match_lut.group(1) if match_lut else "N/A"
 
-    # 2. Extract ASIC Gate Area (e.g., "Chip area for module '\hash_sampler_unit': 81597.528")
-    match_asic = re.search(r'Chip area for module[^\n]*?:\s+([\d\.]+)', log)
-    if match_asic:
-        metrics["asic_ge"] = match_asic.group(1)
+        # Extract Longest Topological Path
+        match_ltp = re.search(r'Longest topological path[^\n]*?\(length=(\d+)\)', log)
+        metrics["ltp"] = match_ltp.group(1) if match_ltp else "N/A"
 
-    # 3. Extract Longest Topological Path
-    match_ltp = re.search(r'Longest topological path[^\n]*?\(length=(\d+)\)', log)
-    if match_ltp:
-        metrics["ltp"] = match_ltp.group(1)
+    elif target == "asic":
+        # Extract ASIC Gate Area
+        match_asic = re.search(r'Chip area for module[^\n]*?:\s+([\d\.]+)', log)
+        metrics["asic_ge"] = match_asic.group(1) if match_asic else "N/A"
 
-    return metrics
+    output_file = f"metrics-{target}.json"
+    with open(output_file, "w") as f:
+        json.dump(metrics, f, indent=4)
 
-def generate_markdown(metrics):
-    """Formats the metrics into a GitHub PR comment."""
+    print(f"Metrics successfully extracted and saved to {output_file}")
+
+def generate_report(top_module):
+    """Reads all JSON artifacts from disk and builds the final Markdown table."""
+    metrics = {
+        "fpga_luts": "N/A",
+        "asic_ge": "N/A",
+        "ltp": "N/A"
+    }
+
+    # Load FPGA metrics if the artifact exists
+    if os.path.exists("metrics-fpga.json"):
+        with open("metrics-fpga.json", "r") as f:
+            fpga_data = json.load(f)
+            metrics.update(fpga_data)
+    else:
+        print("Warning: metrics-fpga.json not found. FPGA data will show as N/A.")
+
+    # Load ASIC metrics if the artifact exists
+    if os.path.exists("metrics-asic.json"):
+        with open("metrics-asic.json", "r") as f:
+            asic_data = json.load(f)
+            metrics.update(asic_data)
+    else:
+        print("Warning: metrics-asic.json not found. ASIC data will show as N/A.")
+
+    # Generate Markdown
     md = f"""
-### 📊 Hardware Synthesis Metrics (`{TOP_MODULE}`)
+### Hardware Synthesis Metrics (`{top_module}`)
 
 | Metric | Target | Value |
 |--------|--------|-------|
@@ -104,10 +151,27 @@ def generate_markdown(metrics):
 """
     with open("pr_comment.md", "w") as f:
         f.write(md)
-    print("\n✅ Metrics successfully extracted and saved to pr_comment.md:")
-    print(f"   LUTs: {metrics['fpga_luts']} | GEs: {metrics['asic_ge']} | Path: {metrics['ltp']}")
+
+    print("Final report generated and saved to pr_comment.md:")
+    print(f"LUTs: {metrics['fpga_luts']} | GEs: {metrics['asic_ge']} | Path: {metrics['ltp']}")
 
 if __name__ == "__main__":
-    generate_yosys_script()
-    metrics_data = run_and_extract_metrics()
-    generate_markdown(metrics_data)
+    parser = argparse.ArgumentParser(description="Yosys Synthesis Metrics Engine")
+    parser.add_argument("--top", required=True, help="Top level module name")
+
+    # Mutually exclusive group: You either run a synthesis, or generate a report, but not both at once.
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--run", choices=['fpga', 'asic'], help="Execute Yosys for a specific target and save JSON")
+    group.add_argument("--report", action="store_true", help="Consume JSON artifacts and generate Markdown report")
+
+    args = parser.parse_args()
+
+    if args.run:
+        print(f"--- Starting Phase: Synthesis ({args.run.upper()}) ---")
+        generate_yosys_script(args.run, args.top)
+        raw_log = run_yosys()
+        extract_and_save_metrics(raw_log, args.run)
+
+    elif args.report:
+        print("--- Starting Phase: Report Generation ---")
+        generate_report(args.top)
