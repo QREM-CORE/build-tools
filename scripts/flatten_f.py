@@ -1,3 +1,19 @@
+"""
+=============================================================================
+File        : flatten_f.py
+Author(s)   : Kiet Le
+Description : A recursive HDL filelist (.f) flattener. Resolves relative paths
+              to absolute locations based on the filelist's directory and
+              performs base-filename deduplication. Specifically designed to
+              resolve "Diamond Dependency" conflicts in nested submodules
+              within the ML-KEM hardware accelerator build system.
+
+Usage:
+  python3 flatten_f.py <top_level_filelist.f>
+  (Outputs a list of unique, absolute-pathed source files to stdout)
+=============================================================================
+"""
+
 import sys
 import os
 
