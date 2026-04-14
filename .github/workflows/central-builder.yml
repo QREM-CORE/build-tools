@@ -134,7 +134,8 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          repository: ${{ github.repository }}
+          repository: QREM-CORE/build-tools
+          ref: ci_revolution
           path: workspace/build-tools
 
       - uses: YosysHQ/setup-oss-cad-suite@v3
@@ -163,7 +164,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          repository: ${{ github.repository }}
+          repository: QREM-CORE/build-tools
+          ref: ci_revolution
 
       - uses: actions/download-artifact@v4
         with:
