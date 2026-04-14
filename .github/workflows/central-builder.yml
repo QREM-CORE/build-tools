@@ -144,7 +144,9 @@ jobs:
 
       - name: Run Synthesis Target
         working-directory: workspace/rtl
-        run: python3 ../build-tools/scripts/synth_metrics.py --top ${{ matrix.module }} --run ${{ matrix.target }}
+        run: |
+          make build.f
+          python3 ../build-tools/scripts/synth_metrics.py --top ${{ matrix.module }} --run ${{ matrix.target }}
 
       - uses: actions/upload-artifact@v4
         with:
