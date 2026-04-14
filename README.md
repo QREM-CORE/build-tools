@@ -8,7 +8,7 @@ By centralizing these tools, hardware repositories remain lightweight and do not
 
 ---
 
-## Part A: The "Golden Pipeline" (CI/CD)
+## Part A: Centralized Builder (CI/CD)
 
 The `central-builder.yml` workflow enforces a unified standard across all target repositories. It utilizes a dynamic "Scatter-Gather" 2D matrix architecture to run targets and modules in parallel.
 
