@@ -1,0 +1,255 @@
+# =============================================================================
+# File        : central-builder.yml
+# Author(s)   : Kiet Le
+# Description : Centralized, scalable CI/CD "Golden Pipeline" for RTL hardware
+#               development. Enforces a unified standard across multiple
+#               repositories without requiring local CI environment maintenance.
+#
+# Core Architecture & Supported Toolchain:
+#   - Linting    : Verible
+#   - Simulation : Verilator (Fast) & ModelSim / VSIM 32-bit (Slow)
+#   - Synthesis  : Yosys + Slang
+#   - Reporting  : Dynamic "Scatter-Gather" 2D Matrix (Targets x Modules)
+#
+# Execution Modes:
+#   1. Automated (workflow_call)     : Triggered seamlessly by PRs in caller repos.
+#   2. Manual    (workflow_dispatch) : On-demand "Order Form" via the Actions UI.
+#
+# Input Configuration:
+#   - rtl_repo     : Target repository to pull code from (e.g., owner/repo).
+#   - commit_sha   : Specific commit or branch to test.
+#   - top_modules  : Comma-separated string of modules (e.g., "keccak_core, mlkem_core").
+#                    Dynamically parsed into a JSON array for parallel matrix execution.
+#   - enable_* : Boolean toggles to selectively bypass heavy jobs (Synth, VSIM)
+#                    for minor documentation or lint-only commits.
+#
+# Artifacts & Outputs:
+#   - Aggregated metrics are compiled into a unified Markdown table.
+#   - Reports are automatically posted as a PR comment (if triggered via PR)
+#     and appended to the GitHub Actions Step Summary.
+# =============================================================================
+
+name: Central RTL Builder
+
+on:
+  # Trigger 1: Automated trigger from individual RTL repositories
+  workflow_call:
+    inputs:
+      rtl_repo:
+        type: string
+        required: true
+      commit_sha:
+        type: string
+        required: true
+      top_modules:
+        type: string
+        required: true
+        description: 'Comma-separated list of top modules'
+      enable_synth:
+        type: boolean
+        required: false
+        default: true
+      enable_lint:
+        type: boolean
+        required: false
+        default: true
+      enable_verilator:
+        type: boolean
+        required: false
+        default: true
+      enable_vsim:
+        type: boolean
+        required: false
+        default: true
+
+  # Trigger 2: Manual "Order Form" execution from the build-tools repo
+  workflow_dispatch:
+    inputs:
+      rtl_repo:
+        description: 'Target RTL Repository (e.g., username/mlkem-hardware)'
+        type: string
+        required: true
+      commit_sha:
+        description: 'Commit SHA or Branch'
+        type: string
+        required: true
+        default: 'main'
+      top_modules:
+        description: 'Comma-separated top modules'
+        type: string
+        required: true
+        default: 'keccak_core, mlkem_core'
+      enable_synth:
+        description: 'Enable Yosys Synthesis Phase'
+        type: boolean
+        required: false
+        default: true
+      enable_lint:
+        description: 'Enable Verible Linter'
+        type: boolean
+        required: false
+        default: true
+      enable_verilator:
+        description: 'Enable Verilator Simulation'
+        type: boolean
+        required: false
+        default: true
+      enable_vsim:
+        description: 'Enable ModelSim (VSIM) Simulation'
+        type: boolean
+        required: false
+        default: true
+
+jobs:
+  # --- 1. SYNTH SETUP: String to JSON Array ---
+  setup-matrix:
+    if: ${{ inputs.enable_synth }}
+    runs-on: ubuntu-latest
+    outputs:
+      matrix_modules: ${{ steps.set-matrix.outputs.matrix_modules }}
+    steps:
+      - name: Parse Modules String to JSON
+        id: set-matrix
+        run: |
+          MODULES_JSON=$(echo "${{ inputs.top_modules }}" | jq -R -c 'split(",") | map(gsub("^[ \t]+|[ \t]+$"; "")) | map(select(length > 0))')
+          echo "matrix_modules=$MODULES_JSON" >> $GITHUB_OUTPUT
+
+  # --- 2. SYNTH SCATTER PHASE: 2D Matrix Synthesis ---
+  synthesis-run:
+    needs: setup-matrix
+    if: ${{ inputs.enable_synth }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [fpga, asic]
+        module: ${{ fromJSON(needs.setup-matrix.outputs.matrix_modules) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.rtl_repo }}
+          ref: ${{ inputs.commit_sha }}
+          submodules: recursive
+          path: workspace/rtl
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          path: workspace/build-tools
+
+      - uses: YosysHQ/setup-oss-cad-suite@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Synthesis Target
+        working-directory: workspace/rtl
+        run: python3 ../build-tools/scripts/synth_metrics.py --top ${{ matrix.module }} --run ${{ matrix.target }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: metrics-${{ matrix.module }}-${{ matrix.target }}
+          path: workspace/rtl/metrics-${{ matrix.module }}-${{ matrix.target }}.json
+          retention-days: 1
+
+  # --- 3. SYNTH GATHER PHASE: Aggregation & Reporting ---
+  synthesis-report:
+    needs: [synthesis-run]
+    # We use !cancelled() instead of always() so it runs if previous jobs succeed or fail,
+    # but skips if the workflow was cancelled or if enable_synth is false.
+    if: ${{ !cancelled() && inputs.enable_synth }}
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: metrics-*
+          merge-multiple: true
+          path: artifacts/
+
+      - name: Generate Consolidated Report
+        working-directory: artifacts/
+        run: |
+          python3 ../scripts/synth_report.py
+          cat pr_comment.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Post Metrics Comment on PR
+        if: ${{ github.event.pull_request }}
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          filePath: artifacts/pr_comment.md
+
+  # --- 4. VERILOG LINTER ---
+  verilog-lint:
+    if: ${{ inputs.enable_lint }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.rtl_repo }}
+          ref: ${{ inputs.commit_sha }}
+          submodules: recursive
+
+      - uses: chipsalliance/verible-linter-action@main
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+  # --- 5. VERILATOR SIMULATION ---
+  verilator-build:
+    if: ${{ inputs.enable_verilator }}
+    runs-on: ubuntu-latest
+    container: verilator/verilator:latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.rtl_repo }}
+          ref: ${{ inputs.commit_sha }}
+          submodules: recursive
+
+      - run: apt-get update && apt-get install -y make g++ python3
+      - run: make run_all SIM=verilator
+
+  # --- 6. VSIM SIMULATION ---
+  vsim-build:
+    if: ${{ inputs.enable_vsim }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.rtl_repo }}
+          ref: ${{ inputs.commit_sha }}
+          submodules: recursive
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget build-essential
+          echo "deb http://security.ubuntu.com/ubuntu focal-security main universe" | sudo tee -a /etc/apt/sources.list.d/focal-security.list
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y libc6:i386 libncurses5:i386 libstdc++6:i386 lib32ncurses6 libxft2 libxft2:i386 libxext6 libxext6:i386
+
+      - name: Install ModelSim
+        run: |
+          export INSTALL_DIR=/opt/intelFPGA_lite/20.1
+          sudo mkdir -p $INSTALL_DIR
+          sudo chown -R $USER:$USER /opt
+          wget -q https://downloads.intel.com/akdlm/software/acdsinst/20.1std.1/720/ib_installers/ModelSimSetup-20.1.1.720-linux.run -O modelsim_installer.run
+          chmod +x modelsim_installer.run
+          ./modelsim_installer.run --mode unattended --accept_eula 1 --installdir $INSTALL_DIR
+          rm modelsim_installer.run
+
+          VCO_PATH="$INSTALL_DIR/modelsim_ase/vco"
+          sudo sed -i 's/linux_rh[[:digit:]]\+/linux/g' $VCO_PATH
+          sudo sed -i 's/MTI_VCO_MODE:-\"\"/MTI_VCO_MODE:-\"32\"/g' $VCO_PATH
+          echo "$INSTALL_DIR/modelsim_ase/bin" >> $GITHUB_PATH
+
+      - name: Run Simulation
+        run: |
+          vsim -version
+          source env.sh
+          make
