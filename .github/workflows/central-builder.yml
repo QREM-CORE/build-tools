@@ -61,6 +61,11 @@ on:
         type: boolean
         required: false
         default: true
+      rtl_f_contents:
+        type: string
+        required: false
+        default: ''
+        description: 'Raw contents of rtl.f to use instead of repository file'
 
   # Trigger 2: Manual "Order Form" execution from the build-tools repo
   workflow_dispatch:
@@ -99,6 +104,11 @@ on:
         type: boolean
         required: false
         default: true
+      rtl_f_contents:
+        description: 'Raw contents of rtl.f (override repository file)'
+        type: string
+        required: false
+        default: ''
 
 jobs:
   # --- 1. SYNTH SETUP: String to JSON Array ---
@@ -149,6 +159,13 @@ jobs:
             echo "build-tools submodule missing. Copying from main..."
             cp -r ../build-tools build-tools
             echo "include build-tools/common.mk" > Makefile
+          fi
+
+          if [ -n "${{ inputs.rtl_f_contents }}" ]; then
+            echo "Writing manual rtl.f contents..."
+            cat << 'EOF' > rtl.f
+          ${{ inputs.rtl_f_contents }}
+          EOF
           fi
 
       - name: Run Synthesis Target
@@ -239,6 +256,13 @@ jobs:
             echo "include build-tools/common.mk" > Makefile
           fi
 
+          if [ -n "${{ inputs.rtl_f_contents }}" ]; then
+            echo "Writing manual rtl.f contents..."
+            cat << 'EOF' > rtl.f
+          ${{ inputs.rtl_f_contents }}
+          EOF
+          fi
+
       - run: apt-get update && apt-get install -y make g++ python3
       - name: Run Simulation
         working-directory: workspace/rtl
@@ -269,6 +293,13 @@ jobs:
             echo "build-tools submodule missing. Copying from main..."
             cp -r ../build-tools build-tools
             echo "include build-tools/common.mk" > Makefile
+          fi
+
+          if [ -n "${{ inputs.rtl_f_contents }}" ]; then
+            echo "Writing manual rtl.f contents..."
+            cat << 'EOF' > rtl.f
+          ${{ inputs.rtl_f_contents }}
+          EOF
           fi
 
       - name: Install Dependencies
