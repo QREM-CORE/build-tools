@@ -61,11 +61,11 @@ on:
         type: boolean
         required: false
         default: true
-      rtl_f_contents:
+      rtl_f_sha:
         type: string
         required: false
         default: ''
-        description: 'Raw contents of rtl.f to use instead of repository file'
+        description: 'Commit SHA to fetch rtl.f from (override default)'
 
   # Trigger 2: Manual "Order Form" execution from the build-tools repo
   workflow_dispatch:
@@ -104,8 +104,8 @@ on:
         type: boolean
         required: false
         default: true
-      rtl_f_contents:
-        description: 'Raw contents of rtl.f (override repository file)'
+      rtl_f_sha:
+        description: 'Commit SHA to fetch rtl.f from'
         type: string
         required: false
         default: ''
@@ -161,11 +161,10 @@ jobs:
             echo "include build-tools/common.mk" > Makefile
           fi
 
-          if [ -n "${{ inputs.rtl_f_contents }}" ]; then
-            echo "Writing manual rtl.f contents..."
-            cat << 'EOF' > rtl.f
-          ${{ inputs.rtl_f_contents }}
-          EOF
+          if [ -n "${{ inputs.rtl_f_sha }}" ]; then
+            echo "Fetching rtl.f from SHA ${{ inputs.rtl_f_sha }}..."
+            git fetch origin ${{ inputs.rtl_f_sha }}
+            git show ${{ inputs.rtl_f_sha }}:rtl.f > rtl.f
           fi
 
       - name: Run Synthesis Target
@@ -256,11 +255,10 @@ jobs:
             echo "include build-tools/common.mk" > Makefile
           fi
 
-          if [ -n "${{ inputs.rtl_f_contents }}" ]; then
-            echo "Writing manual rtl.f contents..."
-            cat << 'EOF' > rtl.f
-          ${{ inputs.rtl_f_contents }}
-          EOF
+          if [ -n "${{ inputs.rtl_f_sha }}" ]; then
+            echo "Fetching rtl.f from SHA ${{ inputs.rtl_f_sha }}..."
+            git fetch origin ${{ inputs.rtl_f_sha }}
+            git show ${{ inputs.rtl_f_sha }}:rtl.f > rtl.f
           fi
 
       - run: apt-get update && apt-get install -y make g++ python3
@@ -295,11 +293,10 @@ jobs:
             echo "include build-tools/common.mk" > Makefile
           fi
 
-          if [ -n "${{ inputs.rtl_f_contents }}" ]; then
-            echo "Writing manual rtl.f contents..."
-            cat << 'EOF' > rtl.f
-          ${{ inputs.rtl_f_contents }}
-          EOF
+          if [ -n "${{ inputs.rtl_f_sha }}" ]; then
+            echo "Fetching rtl.f from SHA ${{ inputs.rtl_f_sha }}..."
+            git fetch origin ${{ inputs.rtl_f_sha }}
+            git show ${{ inputs.rtl_f_sha }}:rtl.f > rtl.f
           fi
 
       - name: Install Dependencies
