@@ -142,6 +142,15 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Patch out-of-date target repo
+        working-directory: workspace/rtl
+        run: |
+          if [ ! -d "build-tools" ]; then
+            echo "build-tools submodule missing. Copying from main..."
+            cp -r ../build-tools build-tools
+            echo "include build-tools/common.mk" > Makefile
+          fi
+
       - name: Run Synthesis Target
         working-directory: workspace/rtl
         run: |
@@ -213,9 +222,27 @@ jobs:
           repository: ${{ inputs.rtl_repo }}
           ref: ${{ inputs.commit_sha }}
           submodules: recursive
+          path: workspace/rtl
+
+      - uses: actions/checkout@v4
+        with:
+          repository: QREM-CORE/build-tools
+          ref: main
+          path: workspace/build-tools
+
+      - name: Patch out-of-date target repo
+        working-directory: workspace/rtl
+        run: |
+          if [ ! -d "build-tools" ]; then
+            echo "build-tools submodule missing. Copying from main..."
+            cp -r ../build-tools build-tools
+            echo "include build-tools/common.mk" > Makefile
+          fi
 
       - run: apt-get update && apt-get install -y make g++ python3
-      - run: make run_all SIM=verilator
+      - name: Run Simulation
+        working-directory: workspace/rtl
+        run: make run_all SIM=verilator
 
   # --- 6. VSIM SIMULATION ---
   vsim-build:
@@ -227,6 +254,22 @@ jobs:
           repository: ${{ inputs.rtl_repo }}
           ref: ${{ inputs.commit_sha }}
           submodules: recursive
+          path: workspace/rtl
+
+      - uses: actions/checkout@v4
+        with:
+          repository: QREM-CORE/build-tools
+          ref: main
+          path: workspace/build-tools
+
+      - name: Patch out-of-date target repo
+        working-directory: workspace/rtl
+        run: |
+          if [ ! -d "build-tools" ]; then
+            echo "build-tools submodule missing. Copying from main..."
+            cp -r ../build-tools build-tools
+            echo "include build-tools/common.mk" > Makefile
+          fi
 
       - name: Install Dependencies
         run: |
@@ -253,6 +296,7 @@ jobs:
           echo "$INSTALL_DIR/modelsim_ase/bin" >> $GITHUB_PATH
 
       - name: Run Simulation
+        working-directory: workspace/rtl
         run: |
           vsim -version
           source env.sh
