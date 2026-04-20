@@ -64,7 +64,7 @@ The `common.mk` file provides a dual-simulator Make environment that automatical
 In your target hardware repository, add this tools repository as a submodule:
 
 ```bash
-git submodule add [https://github.com/QREM-CORE/build-tools.git](https://github.com/QREM-CORE/build-tools.git) build-tools
+git submodule add https://github.com/QREM-CORE/build-tools.git build-tools
 git submodule update --init --recursive
 ```
 
