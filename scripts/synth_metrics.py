@@ -39,7 +39,9 @@ def generate_yosys_script(target, top_module):
     # LTP: combinational depth (technology-independent, no xilinx_dffopt noise)
     read_slang -f build.f
     hierarchy -check -top {top_module}
-    synth -top {top_module} -flatten
+    proc
+    flatten
+    opt_expr
     ltp -noff
     """
     elif target == "asic":
