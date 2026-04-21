@@ -29,7 +29,9 @@ def generate_yosys_script(target, top_module):
     """
     if target == "fpga":
         script += f"""
-    synth -lut 6 -top {top_module}
+    # --- METRIC 1: FPGA (Xilinx 7-Series) & TIMING (LTP) ---
+    # synth_xilinx automatically maps memory arrays to BRAMs
+    synth_xilinx -family xc7 -top {top_module}
     stat
     opt -full
     flatten
@@ -37,6 +39,7 @@ def generate_yosys_script(target, top_module):
     """
     elif target == "asic":
         script += f"""
+    # --- METRIC 2: ASIC (Gate Equivalents) ---
     synth -top {top_module}
     abc -g cmos2
     stat
@@ -73,8 +76,18 @@ def run_yosys():
 def extract_and_save_metrics(log, target, top_module):
     metrics = {}
     if target == "fpga":
-        match_lut = re.search(r'(\d+)\s+\$lut', log)
-        metrics["fpga_luts"] = match_lut.group(1) if match_lut else "N/A"
+        # Xilinx stat outputs specific LUT types (LUT1, LUT2... LUT6)
+        lut_matches = re.findall(r'(\d+)\s+LUT\d', log)
+        total_luts = sum(int(count) for count in lut_matches)
+        metrics["fpga_luts"] = str(total_luts) if total_luts > 0 else "N/A"
+
+        # Extract BRAMs (Normalize to 18K equivalents)
+        bram18 = sum(int(c) for c in re.findall(r'(\d+)\s+RAMB18', log))
+        bram36 = sum(int(c) for c in re.findall(r'(\d+)\s+RAMB36', log))
+        total_brams = bram18 + (bram36 * 2)
+        metrics["fpga_brams"] = str(total_brams) if total_brams > 0 else "0"
+
+        # Extract Longest Topological Path
         match_ltp = re.search(r'Longest topological path[^\n]*?\(length=(\d+)\)', log)
         metrics["ltp"] = match_ltp.group(1) if match_ltp else "N/A"
     elif target == "asic":
