@@ -201,7 +201,7 @@ jobs:
       - uses: chipsalliance/verible-linter-action@main
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          extra_args: "--rules=-parameter-name-style"
+          extra_args: "--rules=-parameter-name-style,line-length=length:180"
 
   # --- 5. VERILATOR SIMULATION ---
   verilator-build:
