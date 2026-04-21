@@ -135,7 +135,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: QREM-CORE/build-tools
-          ref: main
+          ref: ${{ inputs.build_tools_ref }}
           path: workspace/build-tools
 
       - uses: YosysHQ/setup-oss-cad-suite@v3
@@ -167,7 +167,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: QREM-CORE/build-tools
-          ref: main
+          ref: ${{ inputs.build_tools_ref }}
 
       - uses: actions/download-artifact@v4
         with:
