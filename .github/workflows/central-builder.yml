@@ -45,6 +45,15 @@ on:
         type: string
         required: true
         description: 'Comma-separated list of top modules'
+      synth_targets:
+        type: string
+        required: false
+        default: 'fpga, asic'
+        description: 'Comma-separated list of synthesis targets'
+      build_tools_ref:
+        type: string
+        required: false
+        default: 'main'
       enable_synth:
         type: boolean
         required: false
@@ -79,6 +88,16 @@ on:
         type: string
         required: true
         default: 'keccak_core, mlkem_core'
+      synth_targets:
+        description: 'Comma-separated synthesis targets'
+        type: string
+        required: false
+        default: 'fpga, asic'
+      build_tools_ref:
+        description: 'Build tools reference'
+        type: string
+        required: false
+        default: 'main'
       enable_synth:
         description: 'Enable Yosys Synthesis Phase'
         type: boolean
@@ -101,18 +120,25 @@ on:
         default: true
 
 jobs:
-  # --- 1. SYNTH SETUP: String to JSON Array ---
+  # --- 1. SYNTH SETUP: String to JSON Arrays ---
   setup-matrix:
     if: ${{ inputs.enable_synth }}
     runs-on: ubuntu-latest
     outputs:
       matrix_modules: ${{ steps.set-matrix.outputs.matrix_modules }}
+      matrix_targets: ${{ steps.set-targets.outputs.matrix_targets }}
     steps:
       - name: Parse Modules String to JSON
         id: set-matrix
         run: |
           MODULES_JSON=$(echo "${{ inputs.top_modules }}" | jq -R -c 'split(",") | map(gsub("^[ \t]+|[ \t]+$"; "")) | map(select(length > 0))')
           echo "matrix_modules=$MODULES_JSON" >> $GITHUB_OUTPUT
+
+      - name: Parse Synth Targets String to JSON
+        id: set-targets
+        run: |
+          TARGETS_JSON=$(echo "${{ inputs.synth_targets }}" | jq -R -c 'split(",") | map(gsub("^[ \t]+|[ \t]+$"; "")) | map(select(length > 0))')
+          echo "matrix_targets=$TARGETS_JSON" >> $GITHUB_OUTPUT
 
   # --- 2. SYNTH SCATTER PHASE: 2D Matrix Synthesis ---
   synthesis-run:
@@ -122,7 +148,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [fpga, asic]
+        target: ${{ fromJSON(needs.setup-matrix.outputs.matrix_targets) }}
         module: ${{ fromJSON(needs.setup-matrix.outputs.matrix_modules) }}
     steps:
       - uses: actions/checkout@v4
@@ -135,7 +161,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: QREM-CORE/build-tools
-          ref: main
+          ref: ${{ inputs.build_tools_ref }}
           path: workspace/build-tools
 
       - uses: YosysHQ/setup-oss-cad-suite@v3
@@ -167,7 +193,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: QREM-CORE/build-tools
-          ref: main
+          ref: ${{ inputs.build_tools_ref }}
 
       - uses: actions/download-artifact@v4
         with:
