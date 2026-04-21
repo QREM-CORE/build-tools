@@ -45,6 +45,10 @@ on:
         type: string
         required: true
         description: 'Comma-separated list of top modules'
+      build_tools_ref:
+        type: string
+        required: false
+        default: 'main'
       enable_synth:
         type: boolean
         required: false
@@ -79,6 +83,11 @@ on:
         type: string
         required: true
         default: 'keccak_core, mlkem_core'
+      build_tools_ref:
+        description: 'Build tools reference'
+        type: string
+        required: false
+        default: 'main'
       enable_synth:
         description: 'Enable Yosys Synthesis Phase'
         type: boolean
