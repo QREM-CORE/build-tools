@@ -75,15 +75,24 @@ def run_yosys():
 
 def extract_and_save_metrics(log, target, top_module):
     metrics = {}
+
+    # Isolate the final statistics section to prevent triple-counting
+    # By splitting on the text and taking the last element [-1],
+    # we automatically grab the very last stats block.
+    if "Printing statistics." in log:
+        stats_section = log.split("Printing statistics.")[-1]
+    else:
+        stats_section = log # Fallback
+
     if target == "fpga":
         # Xilinx stat outputs specific LUT types (LUT1, LUT2... LUT6)
-        lut_matches = re.findall(r'(\d+)\s+LUT\d', log)
+        lut_matches = re.findall(r'(\d+)\s+LUT\d', stats_section)
         total_luts = sum(int(count) for count in lut_matches)
         metrics["fpga_luts"] = str(total_luts) if total_luts > 0 else "N/A"
 
         # Extract BRAMs (Normalize to 18K equivalents)
-        bram18 = sum(int(c) for c in re.findall(r'(\d+)\s+RAMB18', log))
-        bram36 = sum(int(c) for c in re.findall(r'(\d+)\s+RAMB36', log))
+        bram18 = sum(int(c) for c in re.findall(r'(\d+)\s+RAMB18', stats_section))
+        bram36 = sum(int(c) for c in re.findall(r'(\d+)\s+RAMB36', stats_section))
         total_brams = bram18 + (bram36 * 2)
         metrics["fpga_brams"] = str(total_brams) if total_brams > 0 else "0"
 
@@ -97,16 +106,15 @@ def extract_and_save_metrics(log, target, top_module):
             '$_DFF_PP0_': 5.0, '$_DFF_PP1_': 5.0, '$_DFFE_PP_': 6.0, '$_DFFE_PP0P_': 6.0, '$_SDFFCE_PN0P_': 7.0
         }
         total_ge = 0.0
-        header = f"=== {top_module} ==="
-        if header in log:
-            last_stat_block = log.split(header)[-1]
-            matches = re.findall(r'\s+(\d+)\s+(\$_\w+_)', last_stat_block)
-            for count_str, cell_type in matches:
-                total_ge += int(count_str) * ge_weights.get(cell_type, 2.0)
-            if total_ge > 0:
-                metrics["asic_ge"] = f"{total_ge:,.1f}"
+        # We use the 'stats_section' we isolated at the top of the function
+        # to ensure we don't triple-count the cells from the hierarchy breakdown
+        matches = re.findall(r'\s+(\d+)\s+(\$_\w+_)', stats_section)
+        for count_str, cell_type in matches:
+            total_ge += int(count_str) * ge_weights.get(cell_type, 2.0)
+        if total_ge > 0:
+            metrics["asic_ge"] = f"{total_ge:,.1f}"
 
-    # Updated naming convention for matrix support
+    # Save to JSON
     output_file = f"metrics-{top_module}-{target}.json"
     with open(output_file, "w") as f:
         json.dump(metrics, f, indent=4)
