@@ -33,8 +33,13 @@ def generate_yosys_script(target, top_module):
     # synth_xilinx automatically maps memory arrays to BRAMs
     synth_xilinx -family xc7 -top {top_module}
     stat
-    opt -full
-    flatten
+
+    design -reset
+
+    # LTP: combinational depth (technology-independent, no xilinx_dffopt noise)
+    read_slang -f build.f
+    hierarchy -check -top {top_module}
+    synth -top {top_module} -flatten
     ltp -noff
     """
     elif target == "asic":
