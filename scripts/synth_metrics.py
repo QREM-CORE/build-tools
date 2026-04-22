@@ -39,7 +39,7 @@ def generate_yosys_script(target, top_module):
     # LTP: combinational depth (technology-independent, no xilinx_dffopt noise)
     read_slang -f build.f
     hierarchy -check -top {top_module}
-    synth -top {top_module} -flatten
+    synth -lut 6 -top {top_module} -flatten
     ltp -noff
     """
     elif target == "asic":
@@ -85,9 +85,10 @@ def extract_and_save_metrics(log, target, top_module):
     # By splitting on the text and taking the last element [-1],
     # we automatically grab the very last stats block.
     if "Printing statistics." in log:
-        stats_section = log.split("Printing statistics.")[-1]
-    else:
-        stats_section = log # Fallback
+        if target == "fpga":
+            stats_section = log.split("Printing statistics.")[-2]
+        elif target == "asic":
+            stats_section = log.split("Printing statistics.")[-1]
 
     if target == "fpga":
         # Xilinx stat outputs specific LUT types (LUT1, LUT2... LUT6)
