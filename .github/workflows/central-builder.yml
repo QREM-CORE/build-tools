@@ -70,6 +70,10 @@ on:
         type: boolean
         required: false
         default: true
+      enable_sv2v:
+        type: boolean
+        required: false
+        default: true
 
   # Trigger 2: Manual "Order Form" execution from the build-tools repo
   workflow_dispatch:
@@ -118,6 +122,11 @@ on:
         type: boolean
         required: false
         default: true
+      enable_sv2v:
+        description: 'Enable sv2v + Yosys Fast-Fail Check'
+        type: boolean
+        required: false
+        default: true
 
 jobs:
   # --- 1. SYNTH SETUP: String to JSON Arrays ---
@@ -140,10 +149,52 @@ jobs:
           TARGETS_JSON=$(echo "${{ inputs.synth_targets }}" | jq -R -c 'split(",") | map(gsub("^[ \t]+|[ \t]+$"; "")) | map(select(length > 0))')
           echo "matrix_targets=$TARGETS_JSON" >> $GITHUB_OUTPUT
 
-  # --- 2. SYNTH SCATTER PHASE: 2D Matrix Synthesis ---
-  synthesis-run:
+  # --- 2. FAST-FAIL: sv2v + Yosys Synthesis Check ---
+  sv2v-check:
     needs: setup-matrix
-    if: ${{ inputs.enable_synth }}
+    if: ${{ inputs.enable_sv2v }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.setup-matrix.outputs.matrix_modules) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.rtl_repo }}
+          ref: ${{ inputs.commit_sha }}
+          submodules: recursive
+          path: workspace/rtl
+
+      - uses: actions/checkout@v4
+        with:
+          repository: QREM-CORE/build-tools
+          ref: ${{ inputs.build_tools_ref }}
+          path: workspace/build-tools
+
+      - name: Install sv2v and Yosys
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y yosys
+          curl -L https://github.com/zachjs/sv2v/releases/download/v0.0.13/sv2v-Linux.zip -o sv2v.zip
+          unzip sv2v.zip
+          sudo mv sv2v-Linux/sv2v /usr/local/bin/
+          sv2v --version
+          yosys --version
+
+      - name: Flatten and Synthesize
+        working-directory: workspace/rtl
+        run: |
+          make build.f
+          python3 ../build-tools/scripts/flatten_f.py build.f > filelist.txt
+          sv2v $(cat filelist.txt) > design_flattened.v
+          yosys -p "read_verilog design_flattened.v; synth -top ${{ matrix.module }}"
+
+  # --- 3. SYNTH SCATTER PHASE: 2D Matrix Synthesis ---
+  synthesis-run:
+    needs: [setup-matrix, sv2v-check]
+    # Run only if sv2v-check succeeds (or is skipped)
+    if: ${{ always() && (needs.sv2v-check.result == 'success' || needs.sv2v-check.result == 'skipped') && inputs.enable_synth }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
