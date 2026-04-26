@@ -73,7 +73,7 @@ on:
       enable_sv2v:
         type: boolean
         required: false
-        default: true
+        default: false
 
   # Trigger 2: Manual "Order Form" execution from the build-tools repo
   workflow_dispatch:
@@ -126,7 +126,7 @@ on:
         description: 'Enable sv2v + Yosys Fast-Fail Check'
         type: boolean
         required: false
-        default: true
+        default: false
 
 jobs:
   # --- 1. SYNTH SETUP: String to JSON Arrays ---
