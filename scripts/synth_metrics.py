@@ -30,6 +30,7 @@ def generate_yosys_script(target, top_module):
     if target == "fpga":
         script += f"""
     # --- METRIC 1: FPGA (Xilinx 7-Series) & TIMING (LTP) ---
+
     # synth_xilinx automatically maps memory arrays to BRAMs
     synth_xilinx -family xc7 -top {top_module}
     stat
@@ -102,6 +103,16 @@ def extract_and_save_metrics(log, target, top_module):
         total_brams = bram18 + (bram36 * 2)
         metrics["fpga_brams"] = str(total_brams) if total_brams > 0 else "0"
 
+        # Extract DSPs (DSP48E1, DSP48E2, etc.)
+        dsps = sum(int(c) for c in re.findall(r'(\d+)\s+DSP48', stats_section))
+        metrics["fpga_dsps"] = str(dsps) if dsps > 0 else "0"
+
+        # Extract Registers (Flip-Flops: Xilinx FD* + generic $_DFF*)
+        xilinx_ffs = sum(int(c) for c in re.findall(r'(\d+)\s+FD[A-Z]+', stats_section))
+        generic_ffs = sum(int(c) for c in re.findall(r'(\d+)\s+\$_\w*DFF\w*_', stats_section))
+        total_ffs = xilinx_ffs + generic_ffs
+        metrics["fpga_registers"] = str(total_ffs) if total_ffs > 0 else "0"
+
         # Extract Longest Topological Path
         match_ltp = re.search(r'Longest topological path[^\n]*?\(length=(\d+)\)', log)
         metrics["ltp"] = match_ltp.group(1) if match_ltp else "N/A"
@@ -112,13 +123,22 @@ def extract_and_save_metrics(log, target, top_module):
             '$_DFF_PP0_': 5.0, '$_DFF_PP1_': 5.0, '$_DFFE_PP_': 6.0, '$_DFFE_PP0P_': 6.0, '$_SDFFCE_PN0P_': 7.0
         }
         total_ge = 0.0
+        total_cells = 0
+        total_ffs = 0
         # We use the 'stats_section' we isolated at the top of the function
         # to ensure we don't triple-count the cells from the hierarchy breakdown
         matches = re.findall(r'\s+(\d+)\s+(\$_\w+_)', stats_section)
         for count_str, cell_type in matches:
-            total_ge += int(count_str) * ge_weights.get(cell_type, 2.0)
+            count = int(count_str)
+            total_ge += count * ge_weights.get(cell_type, 2.0)
+            total_cells += count
+            if 'DFF' in cell_type:
+                total_ffs += count
+
         if total_ge > 0:
             metrics["asic_ge"] = f"{total_ge:,.1f}"
+            metrics["asic_cells"] = str(total_cells)
+            metrics["asic_ffs"] = str(total_ffs)
 
     # Save to JSON
     output_file = f"metrics-{top_module}-{target}.json"

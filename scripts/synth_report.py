@@ -23,8 +23,12 @@ from collections import defaultdict
 def generate_consolidated_report():
     print("--- Starting Phase: Report Generation ---")
 
-    # Dictionary to hold metrics grouped by module: data["module_name"]["fpga_luts"] = value
-    module_data = defaultdict(lambda: {"fpga_luts": "N/A", "asic_ge": "N/A", "ltp": "N/A"})
+    # Dictionary to hold metrics grouped by module
+    module_data = defaultdict(lambda: {
+        "fpga_luts": "N/A", "fpga_brams": "N/A", "fpga_dsps": "N/A",
+        "fpga_registers": "N/A", "asic_ge": "N/A", "asic_cells": "N/A",
+        "asic_ffs": "N/A", "ltp": "N/A"
+    })
 
     # Find all JSON artifacts in the current directory
     artifact_files = glob.glob("metrics-*.json")
@@ -52,14 +56,25 @@ def generate_consolidated_report():
     md_lines = ["## 📊 Hardware Synthesis Metrics\n"]
 
     for module_name, metrics in sorted(module_data.items()):
-        md_lines.append(f"### Target Top: `{module_name}`")
-        md_lines.append("| Metric | Target | Value |")
-        md_lines.append("|--------|--------|-------|")
-        md_lines.append(f"| **Logic** | FPGA (Xilinx LUTs) | `{metrics['fpga_luts']} LUTs` |")
-        md_lines.append(f"| **Memory** | FPGA (18K BRAMs) | `{metrics['fpga_brams']} Blocks` |")
-        md_lines.append(f"| **Area** | ASIC (CMOS2) | `{metrics['asic_ge']} GEs` |")
-        md_lines.append(f"| **Timing** | Critical Path | `{metrics['ltp']} Logic Levels` |")
-        md_lines.append("\n---")
+        md_lines.append(f"### Target Top: `{module_name}`\n")
+
+        md_lines.append("#### FPGA Metrics (Xilinx 7-Series)")
+        md_lines.append("| Metric | Value |")
+        md_lines.append("|--------|-------|")
+        md_lines.append(f"| **LUTs** | `{metrics.get('fpga_luts', 'N/A')} LUTs` |")
+        md_lines.append(f"| **Registers** | `{metrics.get('fpga_registers', 'N/A')} FFs` |")
+        md_lines.append(f"| **DSPs** | `{metrics.get('fpga_dsps', 'N/A')} DSPs` |")
+        md_lines.append(f"| **BRAMs (18K)** | `{metrics.get('fpga_brams', 'N/A')} Blocks` |")
+        md_lines.append(f"| **Critical Path** | `{metrics.get('ltp', 'N/A')} Logic Levels` |\n")
+
+        md_lines.append("#### ASIC Metrics (CMOS2)")
+        md_lines.append("| Metric | Value |")
+        md_lines.append("|--------|-------|")
+        md_lines.append(f"| **Area (GE)** | `{metrics.get('asic_ge', 'N/A')} GEs` |")
+        md_lines.append(f"| **Total Cells** | `{metrics.get('asic_cells', 'N/A')} Cells` |")
+        md_lines.append(f"| **Registers** | `{metrics.get('asic_ffs', 'N/A')} FFs` |\n")
+
+        md_lines.append("---")
 
     md_lines.append("\n> *Generated automatically by the centralized Yosys + Slang CI Pipeline.*")
 
