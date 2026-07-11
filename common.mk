@@ -35,6 +35,7 @@ run_all: build.f
 run_%: build.f
 	@echo "=== Running $* with $(SIM) ==="
 ifeq ($(SIM), verilator)
+	verilator --version
 	verilator $(VERILATOR_FLAGS) $(INCDIRS) --top-module $* -f build.f tb/$*.sv
 	bash -c "set -o pipefail; ./obj_dir/V$* 2>&1 | tee $*.log"
 else
