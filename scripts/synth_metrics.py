@@ -25,7 +25,7 @@ import os
 def generate_yosys_script(target, top_module):
     script = f"""
     # 1. Read and Elaborate
-    read_slang -f build.f
+    read_slang --top {top_module} -f build.f
     hierarchy -check -top {top_module}
     """
     if target == "fpga":
@@ -47,7 +47,7 @@ def generate_yosys_script(target, top_module):
 
     # 3. Longest Topological Path: We perform a clean synthesis run targeting
     #    generic 6-input LUTs without technology mapping noise (xilinx_dffopt).
-    read_slang -f build.f
+    read_slang --top {top_module} -f build.f
     hierarchy -check -top {top_module}
     synth -lut 6 -top {top_module} -flatten
     #    Calculate the critical path logic depth (ignoring logic inside flip-flops)
