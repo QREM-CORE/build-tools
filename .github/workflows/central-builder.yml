@@ -222,13 +222,12 @@ jobs:
       - name: Run Synthesis Target
         working-directory: workspace/rtl
         run: |
-          make build.f
-          python3 ../build-tools/scripts/synth_metrics.py --top ${{ matrix.module }} --run ${{ matrix.target }}
+          make synth_${{ matrix.target }} TOP_MODULE=${{ matrix.module }}
 
       - uses: actions/upload-artifact@v4
         with:
           name: metrics-${{ matrix.module }}-${{ matrix.target }}
-          path: workspace/rtl/metrics-${{ matrix.module }}-${{ matrix.target }}.json
+          path: workspace/rtl/synth/metrics/metrics-${{ matrix.module }}-${{ matrix.target }}.json
           retention-days: 1
 
   # --- 3. SYNTH GATHER PHASE: Aggregation & Reporting ---
