@@ -20,6 +20,7 @@ import subprocess
 import re
 import json
 import sys
+import os
 
 def generate_yosys_script(target, top_module):
     script = f"""
@@ -53,7 +54,7 @@ def generate_yosys_script(target, top_module):
     with open("metrics.ys", "w") as f:
         f.write(script)
 
-def run_yosys():
+def run_yosys(logdir, target, top_module):
     try:
         with open("metrics.ys", "r") as f:
             script_contents = f.read()
@@ -66,20 +67,34 @@ def run_yosys():
     cmd = ["yosys", "-T", "-m", "slang", "metrics.ys"]
     print(f"Executing Command: {' '.join(cmd)}")
 
+    log_file = os.path.join(logdir, f"metrics-{top_module}-{target}.log")
+    if logdir != ".":
+        os.makedirs(logdir, exist_ok=True)
+
     try:
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, check=True)
         print("::group::Click here to expand the raw Yosys Synthesis Log")
         print(result.stdout)
         print("::endgroup::\n")
+
+        with open(log_file, "w") as f:
+            f.write(result.stdout)
+        print(f"Synthesis log saved to {log_file}")
+
         return result.stdout
     except subprocess.CalledProcessError as e:
         print("Error: Yosys synthesis failed!")
         print("::group::Click here to view the Failing Yosys Log")
         print(e.stdout)
         print("::endgroup::")
+
+        with open(log_file, "w") as f:
+            f.write(e.stdout)
+        print(f"Synthesis error log saved to {log_file}")
+
         sys.exit(1)
 
-def extract_and_save_metrics(log, target, top_module):
+def extract_and_save_metrics(log, target, top_module, outdir):
     metrics = {}
 
     # Isolate the final statistics section to prevent triple-counting
@@ -142,17 +157,28 @@ def extract_and_save_metrics(log, target, top_module):
 
     # Save to JSON
     output_file = f"metrics-{top_module}-{target}.json"
-    with open(output_file, "w") as f:
+    output_path = os.path.join(outdir, output_file)
+
+    # Create directory if it doesn't exist
+    if outdir != ".":
+        os.makedirs(outdir, exist_ok=True)
+
+    with open(output_path, "w") as f:
         json.dump(metrics, f, indent=4)
-    print(f"Metrics extracted and saved to {output_file}")
+    print(f"Metrics extracted and saved to {output_path}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run Yosys Synthesis Metrics")
     parser.add_argument("--top", required=True, help="Top level module name")
     parser.add_argument("--run", required=True, choices=['fpga', 'asic'], help="Target platform")
+    parser.add_argument("--outdir", default=".", help="Directory to save the metrics JSON files")
+    parser.add_argument("--logdir", default=None, help="Directory to save the synthesis log files (defaults to outdir)")
     args = parser.parse_args()
+
+    if args.logdir is None:
+        args.logdir = args.outdir
 
     print(f"--- Starting Synthesis: {args.top} ({args.run.upper()}) ---")
     generate_yosys_script(args.run, args.top)
-    raw_log = run_yosys()
-    extract_and_save_metrics(raw_log, args.run, args.top)
+    raw_log = run_yosys(args.logdir, args.run, args.top)
+    extract_and_save_metrics(raw_log, args.run, args.top, args.outdir)
