@@ -30,40 +30,65 @@ def generate_yosys_script(target, top_module):
     """
     if target == "fpga":
         script += f"""
+    # =========================================================================
     # --- METRIC 1: FPGA (Xilinx 7-Series) & TIMING (LTP) ---
+    # We extract two metrics: Resource Utilization (LUTs/BRAMs/DSPs) and
+    # Longest Topological Path (critical path depth in logic levels).
+    # =========================================================================
 
-    # synth_xilinx automatically maps memory arrays to BRAMs
+    # 1. Resource Utilization: synth_xilinx automatically maps memory arrays
+    #    to BRAMs and logic to LUTs/DSPs/Registers.
     synth_xilinx -family xc7 -top {top_module}
+    #    Print the statistics table which our python script will parse
     stat
 
+    # 2. Reset the Yosys state to clear Xilinx-specific mapping artifacts
     design -reset
 
-    # LTP: combinational depth (technology-independent, no xilinx_dffopt noise)
+    # 3. Longest Topological Path: We perform a clean synthesis run targeting
+    #    generic 6-input LUTs without technology mapping noise (xilinx_dffopt).
     read_slang -f build.f
     hierarchy -check -top {top_module}
     synth -lut 6 -top {top_module} -flatten
+    #    Calculate the critical path logic depth (ignoring logic inside flip-flops)
     ltp -noff
     """
     elif target == "asic":
         lib_file = "sky130_fd_sc_hd__tt_025C_1v80.lib"
-        
+
         with open("constr.txt", "w") as f:
             f.write("set_driving_cell sky130_fd_sc_hd__inv_1\nset_load 0.0\n")
 
         script += f"""
-    # --- METRIC 2: ASIC (Gate Equivalents) ---
+    # =========================================================================
+    # --- METRIC 2: ASIC Synthesis (Dual-Pass Strategy) ---
+    # We perform synthesis once, but map the logic twice to extract two
+    # different sets of metrics: Generic Area (GE) and Physical Timing (Sky130)
+    # =========================================================================
+
+    # 1. Generic Synthesis: Translate RTL into an abstract internal representation
     synth -top {top_module}
 
-    # Save design state before technology mapping
+    # 2. Save State: Checkpoint the generic gate-level netlist before we map it
     design -save pre_map
 
-    # Pass 1: Map to generic CMOS gates for Area/GE extraction
+    # =========================================================================
+    # PASS 1: Generic CMOS2 Mapping (For technology-independent Area/GE metrics)
+    # =========================================================================
+    # Map the abstract logic to basic CMOS gates (NAND, NOR, DFF)
     abc -g cmos2
+    # Print the statistics table (Area/GE) which our python regex will parse
     stat
 
-    # Pass 2: Map to Sky130 for Timing/Fmax extraction
+    # =========================================================================
+    # PASS 2: Skywater 130nm HD Mapping (For accurate Timing/Fmax & Physical Area)
+    # =========================================================================
+    # 1. Restore the generic unmapped netlist checkpoint
     design -load pre_map
+    # 2. Map flip-flops to the physical Sky130 standard cells
     dfflibmap -liberty {lib_file}
+    # 3. Map combinatorial logic to Sky130 standard cells using the constraint file.
+    #    The constr.txt ensures timing delays are accurately driven by a physical inverter.
     abc -liberty {lib_file} -constr constr.txt
     """
     with open("metrics.ys", "w") as f:
@@ -178,7 +203,7 @@ def extract_and_save_metrics(log, target, top_module, outdir):
             metrics["sky130_area_um2"] = match_area.group(1)
         else:
             metrics["sky130_area_um2"] = "N/A"
-            
+
         match_gates = re.search(r'Gates\s*=\s*(\d+)', log)
         if match_gates:
             metrics["sky130_gates"] = match_gates.group(1)
