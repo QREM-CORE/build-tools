@@ -15,7 +15,11 @@ The `central-builder.yml` workflow enforces a unified standard across all target
 **Supported Toolchain:**
 * **Linting:** Verible
 * **Simulation:** Verilator (Fast) & ModelSim / VSIM 32-bit (Slow)
-* **Synthesis:** Yosys + Slang (ASIC & FPGA targets)
+* **Synthesis:** Yosys + Slang + ABC
+  * **FPGA Targets**: Standard LUT/BRAM/DSP metrics.
+  * **Generic ASIC**: Standard cell generic CMOS metrics (GE, cells).
+  * **Physical ASIC (Sky130)**: Pre-layout estimates for physical area (μm²), combinational gates, logic delay (ps), and max frequency (Fmax).
+    > ⚠️ **Note**: These are fast logic synthesis estimates ignoring wire capacitance and routing delays. For sign-off physical metrics, refer to an OpenLane flow.
 
 ### 1. Integration
 To attach a hardware repository to the CI/CD pipeline, delete any local simulation workflows and create `.github/workflows/pr.yml` with the following boilerplate:
@@ -38,6 +42,7 @@ jobs:
     with:
       rtl_repo: ${{ github.repository }}
       commit_sha: ${{ github.sha }}
+      build_tools_ref: 'main'
 
       # Comma-separated list of top-level modules for Synthesis
       top_modules: 'keccak_core, mlkem_core'
@@ -47,6 +52,7 @@ jobs:
       enable_lint: true
       enable_verilator: true
       enable_vsim: true
+      enable_sv2v: true
 ```
 
 ### 2. Configuration & Artifacts
@@ -112,3 +118,12 @@ rtl/my_pkg.sv
 # 3. Local RTL
 rtl/my_core.sv
 ```
+
+---
+
+## Part D: Local Environment Setup
+
+To run synthesis tools locally and replicate the CI environment, the `build-tools` repository provides automated setup scripts:
+
+* **`scripts/install_oss_cad_suite.sh`**: Downloads and installs the OSS CAD Suite, providing local access to `yosys`, `abc`, `verilator`, and other essential hardware tools.
+* **`scripts/get_sky130.sh`**: Downloads and configures the Skywater 130nm (Sky130) Process Design Kit (PDK) constraints and liberty files needed for physical ASIC synthesis metrics.
