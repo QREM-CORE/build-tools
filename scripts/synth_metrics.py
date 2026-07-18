@@ -45,11 +45,26 @@ def generate_yosys_script(target, top_module):
     ltp -noff
     """
     elif target == "asic":
+        lib_file = "sky130_fd_sc_hd__tt_025C_1v80.lib"
+        
+        with open("constr.txt", "w") as f:
+            f.write("set_driving_cell sky130_fd_sc_hd__inv_1\nset_load 0.0\n")
+
         script += f"""
     # --- METRIC 2: ASIC (Gate Equivalents) ---
     synth -top {top_module}
+
+    # Save design state before technology mapping
+    design -save pre_map
+
+    # Pass 1: Map to generic CMOS gates for Area/GE extraction
     abc -g cmos2
     stat
+
+    # Pass 2: Map to Sky130 for Timing/Fmax extraction
+    design -load pre_map
+    dfflibmap -liberty {lib_file}
+    abc -liberty {lib_file} -constr constr.txt
     """
     with open("metrics.ys", "w") as f:
         f.write(script)
@@ -141,8 +156,10 @@ def extract_and_save_metrics(log, target, top_module, outdir):
         total_cells = 0
         total_ffs = 0
         # We use the 'stats_section' we isolated at the top of the function
-        # to ensure we don't triple-count the cells from the hierarchy breakdown
-        matches = re.findall(r'\s+(\d+)\s+(\$_\w+_)', stats_section)
+        # to ensure we don't triple-count the cells from the hierarchy breakdown.
+        # Use re.MULTILINE and $ to ensure we only match the clean `stat` table lines
+        # and not the `dfflibmap` logging (which looks like 'mapped 325 $_DFF_ to...').
+        matches = re.findall(r'^\s+(\d+)\s+(\$_\w+_)$', stats_section, re.MULTILINE)
         for count_str, cell_type in matches:
             count = int(count_str)
             total_ge += count * ge_weights.get(cell_type, 2.0)
@@ -154,6 +171,30 @@ def extract_and_save_metrics(log, target, top_module, outdir):
             metrics["asic_ge"] = f"{total_ge:,.1f}"
             metrics["asic_cells"] = str(total_cells)
             metrics["asic_ffs"] = str(total_ffs)
+
+        # Extract Sky130 Physical Metrics from ABC pass
+        match_area = re.search(r'Area\s*=\s*([\d\.]+)', log)
+        if match_area:
+            metrics["sky130_area_um2"] = match_area.group(1)
+        else:
+            metrics["sky130_area_um2"] = "N/A"
+            
+        match_gates = re.search(r'Gates\s*=\s*(\d+)', log)
+        if match_gates:
+            metrics["sky130_gates"] = match_gates.group(1)
+        else:
+            metrics["sky130_gates"] = "N/A"
+
+        match_delay = re.search(r'Delay\s*=\s*([\d\.]+)\s*ps', log)
+        if match_delay:
+            delay_ps = float(match_delay.group(1))
+            if delay_ps > 0:
+                fmax_mhz = 1_000_000 / delay_ps
+                metrics["sky130_delay_ps"] = f"{delay_ps:.2f}"
+                metrics["sky130_fmax_mhz"] = f"{fmax_mhz:.1f}"
+        else:
+            metrics["sky130_delay_ps"] = "N/A"
+            metrics["sky130_fmax_mhz"] = "N/A"
 
     # Save to JSON
     output_file = f"metrics-{top_module}-{target}.json"

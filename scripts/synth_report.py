@@ -27,7 +27,8 @@ def generate_consolidated_report():
     module_data = defaultdict(lambda: {
         "fpga_luts": "N/A", "fpga_brams": "N/A", "fpga_dsps": "N/A",
         "fpga_registers": "N/A", "asic_ge": "N/A", "asic_cells": "N/A",
-        "asic_ffs": "N/A", "ltp": "N/A"
+        "asic_ffs": "N/A", "ltp": "N/A", "sky130_area_um2": "N/A",
+        "sky130_gates": "N/A", "sky130_delay_ps": "N/A", "sky130_fmax_mhz": "N/A"
     })
 
     # Find all JSON artifacts in the current directory
@@ -54,6 +55,7 @@ def generate_consolidated_report():
 
     # Build the Markdown string
     md_lines = ["## 📊 Hardware Synthesis Metrics\n"]
+    md_lines.append("> ⚠️ **Note**: These metrics are generated using Fast Logic Synthesis (`Yosys` + `ABC`). They represent theoretical **pre-layout estimates** (ignoring wire capacitance and routing delays). For sign-off grade physical metrics, please refer to the OpenLane workflow artifacts.\n")
 
     for module_name, metrics in sorted(module_data.items()):
         md_lines.append(f"### Target Top: `{module_name}`\n")
@@ -67,12 +69,20 @@ def generate_consolidated_report():
         md_lines.append(f"| **BRAMs (18K)** | `{metrics.get('fpga_brams', 'N/A')} Blocks` |")
         md_lines.append(f"| **Critical Path** | `{metrics.get('ltp', 'N/A')} Logic Levels` |\n")
 
-        md_lines.append("#### ASIC Metrics (CMOS2)")
+        md_lines.append("#### Generic ASIC Metrics (CMOS2) - Pre-Layout")
         md_lines.append("| Metric | Value |")
         md_lines.append("|--------|-------|")
         md_lines.append(f"| **Area (GE)** | `{metrics.get('asic_ge', 'N/A')} GEs` |")
         md_lines.append(f"| **Total Cells** | `{metrics.get('asic_cells', 'N/A')} Cells` |")
         md_lines.append(f"| **Registers** | `{metrics.get('asic_ffs', 'N/A')} FFs` |\n")
+
+        md_lines.append("#### Physical ASIC Metrics (Skywater 130nm) - Pre-Layout")
+        md_lines.append("| Metric | Value |")
+        md_lines.append("|--------|-------|")
+        md_lines.append(f"| **Physical Area** | `{metrics.get('sky130_area_um2', 'N/A')} μm²` |")
+        md_lines.append(f"| **Combinational Gates** | `{metrics.get('sky130_gates', 'N/A')} Gates` |")
+        md_lines.append(f"| **Logic Delay** | `{metrics.get('sky130_delay_ps', 'N/A')} ps` |")
+        md_lines.append(f"| **Max Freq** | `{metrics.get('sky130_fmax_mhz', 'N/A')} MHz` |\n")
 
         md_lines.append("---")
 

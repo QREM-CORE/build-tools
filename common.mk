@@ -62,10 +62,18 @@ SYNTH_LOGDIR ?= ./synth/build/logs/
 # Run all synthesis targets
 synth: synth_fpga synth_asic
 
+.PHONY: get_sky130
+get_sky130:
+	@bash $(BUILD_TOOLS_DIR)/scripts/get_sky130.sh
+
 # Individual synthesis targets
-synth_%: build.f
-	@echo "=== Running Yosys Synthesis ($*) for $(TOP_MODULE) ==="
-	python3 $(BUILD_TOOLS_DIR)/scripts/synth_metrics.py --top $(TOP_MODULE) --run $* --outdir $(SYNTH_OUTDIR) --logdir $(SYNTH_LOGDIR)
+synth_fpga: build.f
+	@echo "=== Running Yosys Synthesis (fpga) for $(TOP_MODULE) ==="
+	python3 $(BUILD_TOOLS_DIR)/scripts/synth_metrics.py --top $(TOP_MODULE) --run fpga --outdir $(SYNTH_OUTDIR) --logdir $(SYNTH_LOGDIR)
+
+synth_asic: build.f get_sky130
+	@echo "=== Running Yosys Synthesis (asic) for $(TOP_MODULE) ==="
+	python3 $(BUILD_TOOLS_DIR)/scripts/synth_metrics.py --top $(TOP_MODULE) --run asic --outdir $(SYNTH_OUTDIR) --logdir $(SYNTH_LOGDIR)
 
 # Allow for custom cleanup in separate repos
 EXTRA_CLEAN ?=
