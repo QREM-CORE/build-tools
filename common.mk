@@ -50,8 +50,25 @@ else
 	@rm -f run_$*.macro
 endif
 
+# =====================
+# SYNTHESIS TARGETS
+# =====================
+TOP_MODULE ?= $(basename $(notdir $(shell grep -v '^\s*\#' $(FILELIST) | grep -v '^\s*$$' | grep -v '^-' | tail -1)))
+SYNTH_OUTDIR ?= ./synth/metrics/
+SYNTH_LOGDIR ?= ./synth/build/logs/
+
+.PHONY: synth
+
+# Run all synthesis targets
+synth: synth_fpga synth_asic
+
+# Individual synthesis targets
+synth_%: build.f
+	@echo "=== Running Yosys Synthesis ($*) for $(TOP_MODULE) ==="
+	python3 $(BUILD_TOOLS_DIR)/scripts/synth_metrics.py --top $(TOP_MODULE) --run $* --outdir $(SYNTH_OUTDIR) --logdir $(SYNTH_LOGDIR)
+
 # Allow for custom cleanup in separate repos
 EXTRA_CLEAN ?=
 
 clean:
-	rm -rf work *.vcd transcript vsim.wlf run_*.macro *.log obj_dir build.f $(EXTRA_CLEAN)
+	rm -rf work *.vcd transcript vsim.wlf run_*.macro *.log obj_dir build.f metrics.ys $(SYNTH_LOGDIR)/metrics-*.log $(EXTRA_CLEAN)
