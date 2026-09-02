@@ -13,7 +13,8 @@ TESTBENCHES = $(patsubst tb/%.sv,%,$(wildcard tb/*_tb.sv))
 # Find where THIS common.mk file is located so we can find the scripts
 BUILD_TOOLS_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
 
-VERILATOR_FLAGS = --binary -j 0 --timing --trace -Wall -Wno-fatal
+VERILATOR_JOBS ?= 4
+VERILATOR_FLAGS = --binary -j $(VERILATOR_JOBS) --timing --trace -Wall -Wno-fatal
 
 # =====================
 # STANDARD TARGETS
